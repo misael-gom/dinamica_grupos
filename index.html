@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>El Reto de la RS</title>
+  <style>
+    :root{ --bg:#0f1724; --card:#0b1220; --accent:#06b6d4; --muted:#94a3b8; --glass:rgba(255,255,255,0.04); }
+    *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071127,#05202b);color:#e6eef6}
+    .app{max-width:1100px;margin:28px auto;padding:20px}
+    .top{display:flex;justify-content:space-between;align-items:center;gap:12px}
+    .scores{display:flex;gap:12px}
+    .team-card{background:var(--card);padding:12px 16px;border-radius:12px;min-width:220px;box-shadow:0 6px 20px rgba(0,0,0,.4)}
+    .team-card h3{margin:0;color:var(--muted);font-size:14px}
+    .team-card .name{font-size:20px;font-weight:700}
+    .turn-indicator{padding:10px 16px;border-radius:12px;background:linear-gradient(90deg,#06b6d4,#7c3aed)}
+    .start-screen{display:grid;gap:10px;max-width:600px;margin:40px auto;background:var(--glass);padding:20px;border-radius:12px;text-align:center}
+    input{padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);background:transparent;color:white}
+    button{padding:10px 14px;border-radius:10px;background:var(--accent);font-weight:700;border:0;cursor:pointer;color:#002430}
+    .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-top:20px}
+    .door{background:#0b2130;border-radius:10px;padding:14px;cursor:pointer;text-align:center;box-shadow:0 8px 20px rgba(0,0,0,.5);color:#e6eef6;font-weight:700}
+    .door .num{font-size:16px}
+    .door.used{opacity:.35;pointer-events:none}
+    .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;padding:20px}
+    .modal{background:#071127;padding:20px;border-radius:12px;max-width:800px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,.7)}
+    .opt{padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,.1);cursor:pointer;margin-top:6px}
+    .opt.disabled{opacity:.5;pointer-events:none}
+    .feedback{margin-top:14px;padding:12px;border-radius:8px}
+    .success{background:#084d1f}
+    .fail{background:#5a0e23}
+
+    /* Animations */
+    .fadeIn{animation:fadeIn .35s ease}
+    @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+    .doorPop{animation:pop .28s ease}
+    @keyframes pop{0%{transform:scale(1)}50%{transform:scale(1.06)}100%{transform:scale(1)}}
+    .optionPop{animation:fadeIn .2s ease}
+    .floating{animation:fadeUp .9s ease forwards}
+    @keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-40px)}}
+
+    /* small layout tweaks */
+    @media (max-width:800px){.grid{grid-template-columns:repeat(4,1fr)}}
+    @media (max-width:500px){.grid{grid-template-columns:repeat(2,1fr)}}
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <div class="top">
+    <div class="scores">
+      <div class="team-card">
+        <h3>Equipo A</h3>
+        <div class="name" id="teamAname">Equipo A</div>
+        <div>Puntos: <span id="teamApoints">0</span></div>
+      </div>
+      <div class="team-card">
+        <h3>Equipo B</h3>
+        <div class="name" id="teamBname">Equipo B</div>
+        <div>Puntos: <span id="teamBpoints">0</span></div>
+      </div>
+    </div>
+    <div class="turn-indicator" id="turnIndicator">Turno del Equipo A</div>
+  </div>
+
+  <div class="start-screen" id="startScreen">
+    <h2>El Reto de la Responsabilidad Social</h2>
+    <p>Introduce los nombres de los equipos:</p>
+    <input id="inputTeamA" placeholder="Equipo A" />
+    <input id="inputTeamB" placeholder="Equipo B" />
+    <button id="startBtn">Iniciar</button>
+  </div>
+
+  <div id="board" style="display:none">
+  <div class="grid" id="grid"></div>
+  <p style="color:var(--muted);margin-top:10px">Dinamica de puertas</p>
+</div>
+
+  <template id="modalTemplate">
+    <div class="overlay">
+      <div class="modal">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h2 id="qTitle"></h2>
+          <div>Tiempo: <span id="timer">20</span>s</div>
+        </div>
+        <p id="qText"></p>
+        <div id="options"></div>
+        <div class="feedback" id="feedback" style="display:none"></div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px">
+          <button id="nextBtn" style="display:none">Siguiente turno</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+</div>
+
+<script>
+// ================== CORRECCIONES FINALES ==================
+// - Eliminado brace extra que provocaba SyntaxError
+// - Modal de bono muestra mensaje y permite cambiar al siguiente equipo
+// - Turno cambia manualmente tras "Siguiente turno" en la pregunta
+// - Accesos a nodos del modal usan querySelector sobre el fragment
+
+const questions = [
+  {numero:1,pregunta:'¿Qué es la responsabilidad social?',opciones:['Actuar éticamente','Producir sin límites','Ignorar el entorno'],correcta:0},
+  {numero:2,pregunta:'La ética en RS significa…',opciones:['Transparencia','Ganancias únicamente','Desinformación'],correcta:0},
+  {numero:3,pregunta:'El desarrollo sostenible implica…',opciones:['Pensar en generaciones futuras','Agotar recursos','Solo crecimiento económico'],correcta:1},
+  {numero:4,pregunta:'La transparencia es…',opciones:['Ocultar información','Actuar con claridad y honestidad','Manipular datos'],correcta:1},
+  {numero:5,pregunta:'Sustentabilidad significa…',opciones:['Uso racional de recursos','Gastar más recursos','Solo reciclar'],correcta:0},
+  {numero:6,pregunta:'Participación social es…',opciones:['Involucrar a la comunidad','Trabajar sin comunicarse','Solo contratar personal'],correcta:0},
+  {numero:7,pregunta:'La responsabilidad social individual es…',opciones:['Acciones personales con impacto','Acciones solo empresariales','Leyes gubernamentales'],correcta:0},
+  {numero:8,pregunta:'La RSE corresponde a…',opciones:['Individuos','Empresas','Gobiernos'],correcta:1},
+  {numero:9,pregunta:'La responsabilidad social pública corresponde a…',opciones:['Gobiernos','Empresas','Estudiantes'],correcta:0},
+  {numero:10,pregunta:'La responsabilidad social universitaria promueve…',opciones:['Vinculación y ética','Competencia desleal','Crecimiento sin comunidad'],correcta:0},
+  {numero:11,pregunta:'Una estrategia ambiental es…',opciones:['Reciclaje y ahorro energético','Consumir más energía','Desperdiciar recursos'],correcta:0},
+  {numero:12,pregunta:'Apoyo comunitario incluye…',opciones:['Voluntariado','Contaminación','Desigualdad'],correcta:0},
+  {numero:13,pregunta:'Bienestar laboral implica…',opciones:['Capacitación y equidad','Exceso de trabajo','Discriminación'],correcta:0},
+  {numero:14,pregunta:'Comunicación social significa…',opciones:['Informar resultados a la comunidad','Ocultar información','Publicidad engañosa'],correcta:0},
+  {numero:15,pregunta:'El propósito de la RS es…',opciones:['Crear impacto positivo','Ganar dinero únicamente','Ignorar el entorno'],correcta:0},
+  {numero:16,pregunta:'La ISO 26000 es…',opciones:['Norma internacional de RS','Ley fiscal','Norma para ventas'],correcta:0},
+  {numero:17,pregunta:'El Pacto Mundial ONU tiene…',opciones:['10 principios','2 reglas','50 normas'],correcta:0},
+  {numero:18,pregunta:'Los ODS pertenecen a…',opciones:['Agenda 2030','Marketing digital','Normas ISO'],correcta:0},
+  {numero:19,pregunta:'Un principio del Pacto Mundial es…',opciones:['Derechos humanos','Mentir al consumidor','Desigualdad'],correcta:0},
+  {numero:20,pregunta:'Una norma nacional relacionada es…',opciones:['Legislación laboral','Reglas de videojuegos','Normas deportivas'],correcta:0},
+  {numero:21,pregunta:'¿Qué busca la RS?',opciones:['Bienestar común','Competencia agresiva','Explotación'],correcta:0},
+  {numero:22,pregunta:'La ética guía…',opciones:['Comportamiento responsable','Corrupción','Abuso laboral'],correcta:0},
+  {numero:23,pregunta:'La comunidad debe…',opciones:['Ser involucrada','Ser ignorada','Ser perjudicada'],correcta:0},
+  {numero:24,pregunta:'Un ejemplo de mala RS es…',opciones:['Transparentar información','Contaminar ríos','Voluntariado'],correcta:1},
+  {numero:25,pregunta:'Un ejemplo de buena RS es…',opciones:['Reciclar y apoyar','Explotar recursos','Excluir población'],correcta:0},
+  {numero:26,pregunta:'Un proyecto sustentable…',opciones:['Protege recursos','Destruye ecosistemas','No considera impactos'],correcta:0},
+  {numero:27,pregunta:'La rendición de cuentas implica…',opciones:['Explicar acciones','Ocultar fallas','Engañar'],correcta:0},
+  {numero:28,pregunta:'Una acción ética sería…',opciones:['Ser honesto','Mentir','Manipular'],correcta:0},
+  {numero:29,pregunta:'Una institución socialmente responsable…',opciones:['Contribuye positivamente','Afecta negativamente','Oculta datos'],correcta:0},
+  {numero:30,pregunta:'La RS busca equilibrio entre…',opciones:['Economía, sociedad y ambiente','Solo economía','Solo ambiente'],correcta:0}
+];
+
+const bonusDoors = new Set([4,12,17,25,30]);
+let state = {teamA:'Equipo A',teamB:'Equipo B',pointsA:0,pointsB:0,turn:'A',used:new Set()};
+
+// referencias DOM
+const teamApoints=document.getElementById('teamApoints');
+const teamBpoints=document.getElementById('teamBpoints');
+const teamAname=document.getElementById('teamAname');
+const teamBname=document.getElementById('teamBname');
+const turnIndicator=document.getElementById('turnIndicator');
+
+function update(){
+  teamApoints.textContent = state.pointsA;
+  teamBpoints.textContent = state.pointsB;
+  turnIndicator.textContent = `Turno del Equipo ${state.turn}`;
+}
+
+function buildGrid(){
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  for(let i=1;i<=30;i++){
+    const b=document.createElement('button');
+    b.type='button'; b.className='door fadeIn';
+    b.innerHTML=`<div class='num'>Puerta ${i}</div>`;
+    b.onclick=()=>selectDoor(i,b);
+    grid.appendChild(b);
+  }
+}
+
+function selectDoor(n,btn){
+  if(state.used.has(n))return;
+  state.used.add(n);
+  btn.classList.add('used');
+
+  const selectingTeam = state.turn;
+
+  if(bonusDoors.has(n)){
+    if(selectingTeam==='A') state.pointsA+=5; else state.pointsB+=5;
+    update();
+    showBonusModal(selectingTeam);
+    return;
+  }
+
+  openModal(n, selectingTeam);
+}
+
+let modalTimer=null;
+function openModal(n, selectingTeam){
+  const template=document.getElementById('modalTemplate');
+  const frag=template.content.cloneNode(true);
+  const overlay=frag.querySelector('.overlay');
+
+  const q=questions.find(x=>x.numero===n);
+  const qTitle=overlay.querySelector('#qTitle');
+  const qText=overlay.querySelector('#qText');
+  const options=overlay.querySelector('#options');
+  const feedback=overlay.querySelector('#feedback');
+  const nextBtn=overlay.querySelector('#nextBtn');
+  const timerEl=overlay.querySelector('#timer');
+
+  qTitle.textContent=`Puerta ${n}`;
+  qText.textContent=q.pregunta;
+
+  let answered=false;
+
+  function finish(correct){
+    if(answered) return; answered=true;
+    if(modalTimer){clearInterval(modalTimer);modalTimer=null;}
+
+    if(correct){
+      feedback.textContent='¡Correcto! +5 puntos';
+      feedback.className='feedback success';
+      if(selectingTeam==='A') state.pointsA+=5; else state.pointsB+=5;
+      showFloating('+5');
+    } else {
+      feedback.textContent='Incorrecto';
+      feedback.className='feedback fail';
+      // **YA NO CAMBIA DE TURNO AQUÍ**
+    }
+
+    update();
+    feedback.style.display='block';
+    nextBtn.style.display='inline-block';
+    options.querySelectorAll('.opt').forEach(o=>o.classList.add('disabled'));
+  }
+
+  q.opciones.forEach((opt,i)=>{
+    const d=document.createElement('div');
+    d.className='opt optionPop';
+    d.textContent=opt;
+    d.onclick=()=>finish(i===q.correcta);
+    options.appendChild(d);
+  });
+
+  let timeLeft=20;
+  timerEl.textContent=timeLeft;
+  modalTimer=setInterval(()=>{
+    timeLeft--; timerEl.textContent=timeLeft;
+    if(timeLeft<=0){clearInterval(modalTimer);finish(false);} },1000);
+
+  nextBtn.onclick=()=>{
+    // **CAMBIO DE TURNO MANUAL AQUÍ**
+    state.turn = (state.turn==='A') ? 'B' : 'A';
+    overlay.remove();
+    update();
+  };
+
+  document.body.appendChild(frag);
+}
+
+function showBonusModal(team){
+  const overlay=document.createElement('div');
+  overlay.className='overlay fadeIn';
+  const box=document.createElement('div');
+  box.className='modal fadeIn';
+
+  box.innerHTML=`
+    <h2 style="margin-top:0">🎉 ¡Felicidades!</h2>
+    <p>El equipo <strong>${team==='A'? state.teamA : state.teamB}</strong> ganó <strong>+5 puntos</strong>.</p>
+    <p>Ahora corresponde cambiar al siguiente equipo.</p>
+    <div style="text-align:right;margin-top:15px">
+      <button id='bonusBtn'>Continuar</button>
+    </div>
+  `;
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  document.getElementById('bonusBtn').onclick=()=>{
+    state.turn = (state.turn==='A') ? 'B' : 'A';
+    overlay.remove();
+    update();
+  };
+}
+
+function showFloating(text){
+  const el=document.createElement('div');
+  el.className='floating'; el.textContent=text;
+  el.style.position='fixed'; el.style.left='50%'; el.style.top='20%';
+  el.style.transform='translateX(-50%)';
+  el.style.background='rgba(255,255,255,0.15)';
+  el.style.padding='10px 14px'; el.style.borderRadius='10px'; el.style.fontWeight='700';
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),900);
+}
+
+buildGrid(); update();
+
+document.getElementById('startBtn').onclick=()=>{
+  state.teamA=document.getElementById('inputTeamA').value || 'Equipo A';
+  state.teamB=document.getElementById('inputTeamB').value || 'Equipo B';
+  teamAname.textContent=state.teamA; teamBname.textContent=state.teamB;
+  document.getElementById('startScreen').style.display='none';
+  document.getElementById('board').style.display='block';
+  buildGrid(); update();
+};
+</script>
+</body>
+</html>
